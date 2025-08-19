@@ -329,18 +329,32 @@ async fn handle_client(
     Ok(())
 }
 
+fn get_user_id() -> Result<String> {
+    let output = Command::new("id")
+        .args(["-u"])
+        .output()?;
+    
+    if !output.status.success() {
+        anyhow::bail!("id command failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    
+    let uid = String::from_utf8(output.stdout)?.trim().to_string();
+    Ok(uid)
+}
+
 async fn start_socket_server(
     file_index: Arc<Mutex<FileIndex>>,
     response_writer: Arc<Mutex<Option<UnixStream>>>,
     active_clients: Arc<AtomicUsize>,
 ) -> Result<()> {
-    let socket_path = "/tmp/quickfile-daemon.sock";
+    let uid = get_user_id().unwrap_or_else(|_| "1000".to_string());
+    let socket_path = format!("/run/user/{}/quickfile-daemon.sock", uid);
 
-    if std::path::Path::new(socket_path).exists() {
-        std::fs::remove_file(socket_path)?;
+    if std::path::Path::new(&socket_path).exists() {
+        std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(socket_path)?;
+    let listener = UnixListener::bind(&socket_path)?;
     info!("Request server listening on {}", socket_path);
 
     loop {
@@ -368,7 +382,8 @@ async fn manage_response_connection(
     response_writer: Arc<Mutex<Option<UnixStream>>>,
     active_clients: Arc<AtomicUsize>,
 ) {
-    let response_socket_path = "/tmp/quickfile-response.sock";
+    let uid = get_user_id().unwrap_or_else(|_| "1000".to_string());
+    let response_socket_path = format!("/run/user/{}/quickfile-response.sock", uid);
 
     loop {
         let has_active_clients = active_clients.load(Ordering::Relaxed) > 0;
@@ -401,7 +416,7 @@ async fn manage_response_connection(
             active_clients.load(Ordering::Relaxed)
         );
 
-        match UnixStream::connect(response_socket_path).await {
+        match UnixStream::connect(&response_socket_path).await {
             Ok(stream) => {
                 info!("Connected to response server");
                 {

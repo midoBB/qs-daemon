@@ -13,6 +13,16 @@ ShellRoot {
     property int totalFiles: 0
     property bool daemonConnected: false
     property bool responseServerActive: false
+    property string userUid: "1000"
+    property bool uidReady: false
+
+    onUidReadyChanged: {
+        if (uidReady && window) {
+            responseServer.active = true
+            requestSocket.connected = true
+            searchInput.forceActiveFocus()
+        }
+    }
 
     function handleDaemonResponse(response) {
         if (response.type === "SearchResults") {
@@ -105,6 +115,18 @@ ShellRoot {
         return merged;
     }
 
+    Process {
+        running: true
+        command: ["id", "-u"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                userUid = this.text.trim()
+                console.log("User UID:", userUid)
+                uidReady = true
+            }
+        }
+    }
+
     PanelWindow {
         id: window
         implicitWidth: 680
@@ -113,9 +135,11 @@ ShellRoot {
         color: "transparent"
 
         Component.onCompleted: {
-            responseServer.active = true
-            requestSocket.connected = true
-            searchInput.forceActiveFocus()
+            if (uidReady) {
+                responseServer.active = true
+                requestSocket.connected = true
+                searchInput.forceActiveFocus()
+            }
         }
 
         Component.onDestruction: {
@@ -125,7 +149,7 @@ ShellRoot {
 
         SocketServer {
             id: responseServer
-            path: "/tmp/quickfile-response.sock"
+            path: "/run/user/" + userUid + "/quickfile-response.sock"
 
             onActiveChanged: {
                 responseServerActive = active
@@ -159,7 +183,7 @@ ShellRoot {
 
         Socket {
             id: requestSocket
-            path: "/tmp/quickfile-daemon.sock"
+            path: "/run/user/" + userUid + "/quickfile-daemon.sock"
 
             onConnectedChanged: {
                 if (connected) {
